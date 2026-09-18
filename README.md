@@ -32,6 +32,7 @@ curriculum repo (`lbg-sre-lab-BUILD.md`).
 | `meme-generator-canary` | — | traces + logs | Lab 12 decoy — makes `like "meme*"` over-match |
 | `meme-worker` | — | traces + logs | Lab 12 decoy |
 | `collector` | 4318 | — | Tail sampling, host metrics, single egress to Dynatrace |
+| `seeder` | — | — | On-demand: backdate probe, history backfill, timeline manifest |
 
 ## Quick start
 
@@ -136,6 +137,55 @@ Learners register their own at runtime:
 curl -s -X POST localhost:8090/stop-conditions -H 'content-type: application/json' \
   -d '{"slow_rate_above": 0.25}'
 ```
+
+## History
+
+Labs 05 and 07 read *"last 24 hours"* and *"a steady window before the rollout"*.
+Three mechanisms produce that, in order of how much they yield:
+
+| # | Mechanism | Yields |
+|---|---|---|
+| 1 | **Continuous running** — the environment persists for the cohort's six weeks | days–weeks |
+| 2 | **Backfill** — `seeder backfill` fills the tenant's accepted backdate window | ~1 hour, probably |
+| 3 | **The course itself** — weeks 3–5 scenarios generate real Problems | lab 12's 7-day MTTR sample |
+
+### Run the probe first
+
+**You cannot assume how far back Dynatrace accepts OTLP.** It enforces an ingest
+window and drops anything outside it **silently** — the collector returns `200`
+and the points never appear. So the seeder measures it instead of guessing:
+
+```bash
+docker compose run --rm seeder probe
+```
+
+That emits a marker at thirteen offsets from *now* to *30 days ago*. A `200`
+only proves the payload was well formed — confirm what is actually **queryable**
+with one DQL query, which the probe prints:
+
+```
+timeseries v = avg(lab.seed.probe), by: { marker }, from: -35d
+| fields marker, v
+```
+
+Every marker that appears is an offset this tenant genuinely accepts. The
+largest is your real ceiling. Design the timeline inside it.
+
+### Backfill
+
+```bash
+docker compose run --rm seeder backfill 1 45    # 1 hour, CPU step 45 min ago
+docker compose run --rm seeder manifest         # what was placed, and when
+```
+
+The CPU/memory step is emitted as a **step** — a one-off rise to a new flat
+level — because Lab 05 step 6 asks learners to distinguish exactly that from a
+ramp ("still climbing is a failure"). The manifest records its timestamp so an
+instructor can name the right timeframe instead of guessing.
+
+**Dynatrace Problems cannot be synthesised.** Lab 12 part 3 re-measures MTTR
+over 7 days of Problems, and the only source is the scenarios actually having
+run during weeks 3–5. Lab 12 depends on the course having happened.
 
 ## Fault injection
 

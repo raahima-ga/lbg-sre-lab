@@ -102,3 +102,17 @@ services:
       - FAIL_EVERY_MS=55000
       - PORT=8096
     depends_on: [collector]
+
+  # History seeder. Not a long-running service -- invoked on demand:
+  #   docker compose run --rm seeder probe
+  #   docker compose run --rm seeder backfill 1 45
+  #   docker compose run --rm seeder manifest
+  seeder:
+    build: ./apps/seeder
+    profiles: ["tools"]
+    environment:
+      - OTLP_ENDPOINT=http://collector:4318
+      - MANIFEST_PATH=/state/timeline.json
+    volumes:
+      - ./state:/state
+    depends_on: [collector]

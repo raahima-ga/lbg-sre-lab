@@ -39,7 +39,11 @@ processors:
   # Attach host identity so the CPU/memory tiles can be scoped. Without this,
   # host metrics arrive with no idea which host they came from.
   resourcedetection:
-    detectors: [env, system, docker]
+    # `docker` is omitted deliberately: it needs /var/run/docker.sock mounted
+    # into the collector, and mounting the daemon socket into a container that
+    # holds an ingest token is a poor trade for a hostname.
+    # In GKE this becomes [env, system, gcp, k8snode].
+    detectors: [env, system]
     override: false
 
   tail_sampling:
