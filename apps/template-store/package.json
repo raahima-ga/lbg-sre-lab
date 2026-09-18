@@ -1,0 +1,14 @@
+{
+  "name": "template-store",
+  "version": "0.9.3",
+  "private": true,
+  "main": "server.js",
+  "scripts": { "start": "node --require ./tracing.js server.js" },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,15 @@
+# Secrets -- never commit. The predecessor repo shipped a live ingest token.
+.env
+*.env
+!.env.example
+*.pem
+*.key
+service-account*.json
+
+node_modules/
+npm-debug.log*
+.DS_Store
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl

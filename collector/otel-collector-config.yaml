@@ -1,0 +1,102 @@
+# OpenTelemetry Collector -- the single egress point for telemetry.
+#
+# Two things here are load-bearing for the curriculum:
+#
+# 1. TAIL SAMPLING. Lesson 05 teaches "always keep errors and slow requests,
+#    keep a fraction of healthy ones". That decision CANNOT be made in the SDK:
+#    at span-start neither the status nor the duration is known yet. So the
+#    services sample at 100% and the real policy lives here, where whole traces
+#    can be judged after the fact. Head-sampling 10% in the SDK would discard
+#    90% of errors -- the exact opposite of the intent.
+#
+# 2. DELTA TEMPORALITY. Dynatrace OTLP metric ingest expects delta, not
+#    cumulative.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+  # Host CPU and memory. Lab 05 step 6 asks learners to see the instrumentation
+  # footprint as a step change, so these need history behind them.
+  hostmetrics:
+    collection_interval: 15s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      load:
+      filesystem:
+
+processors:
+  # Attach host identity so the CPU/memory tiles can be scoped. Without this,
+  # host metrics arrive with no idea which host they came from.
+  resourcedetection:
+    detectors: [env, system, docker]
+    override: false
+
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 200
+    policies:
+      # Keep every error. Non-negotiable: these are the SLI numerator.
+      - name: all-errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+
+      # Keep everything slower than the /generate SLO. These are the traces
+      # lab 06 part 1 has learners sort to the top.
+      - name: all-slow
+        type: latency
+        latency: { threshold_ms: 1500 }
+
+      # Keep a tenth of the healthy remainder, for baselines and topology.
+      - name: healthy-sample
+        type: probabilistic
+        probabilistic: { sampling_percentage: 10 }
+
+  cumulativetodelta: {}
+
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  otlphttp/dynatrace:
+    endpoint: ${env:DT_ENDPOINT}/api/v2/otlp
+    headers:
+      Authorization: Api-Token ${env:DT_API_TOKEN}
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+  # Uncomment to see what is actually being shipped, without a Dynatrace tenant.
+  # debug:
+  #   verbosity: detailed
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, tail_sampling, batch]
+      exporters: [otlphttp/dynatrace]
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [resourcedetection, cumulativetodelta, batch]
+      exporters: [otlphttp/dynatrace]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/dynatrace]

@@ -1,0 +1,64 @@
+# Local development stack for the Meme Generator lab environment.
+#
+# This is the app layer only. In GCP these run on GKE with Istio, and
+# caption-renderer moves OFF the cluster onto a GCE MIG with no agent -- see
+# BUILD.md sec 4.3. Locally it is a container like any other, but it is still
+# uninstrumented, so the telemetry blackout behaves the same way.
+#
+# Quick start:
+#   cp .env.example .env     # then paste your Dynatrace ingest token
+#   docker compose up --build
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./collector/otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    environment:
+      - DT_ENDPOINT=${DT_ENDPOINT}
+      - DT_API_TOKEN=${DT_API_TOKEN}
+    ports:
+      - "4318:4318"
+
+  meme-generator:
+    build: ./apps/meme-generator
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_SERVICE_NAME=meme-generator
+      # The five required attributes. Lab 05 step 3 verifies every one.
+      - OTEL_RESOURCE_ATTRIBUTES=service.version=v2.4.1,deployment.environment=production,cloud.region=europe-west2,team=meme-sre
+      - TEMPLATE_STORE_URL=http://template-store:8081
+      - CAPTION_RENDERER_URL=http://caption-renderer:8082
+      # 40% of the 0.4% baseline failure rate; the other 60% is the dependency.
+      - OWN_ERROR_RATE=0.0016
+    ports:
+      - "8080:8080"
+    depends_on: [collector, template-store, caption-renderer]
+
+  template-store:
+    build: ./apps/template-store
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      # DELIBERATE: service name only. No OTEL_RESOURCE_ATTRIBUTES, so no team,
+      # no version, no region, no environment. This is lab 05 part 2's target.
+      - OTEL_SERVICE_NAME=template-store
+    depends_on: [collector]
+
+  caption-renderer:
+    build: ./apps/caption-renderer
+    # DELIBERATE: no OTEL_* environment at all. This service ships nothing.
+    environment:
+      # Pool sized so baseline is comfortable and ~3x load exhausts it.
+      - POOL_SIZE=24
+      # 60% of the baseline failure rate originates here (RQ-30).
+      - ERROR_RATE=0.0024
+    ports:
+      - "8082:8082"
+
+  loadgen:
+    build: ./apps/loadgen
+    environment:
+      - TARGET=http://meme-generator:8080
+      - GENERATE_RPS=25
+      - TEMPLATES_RPS=5
+    depends_on: [meme-generator]
