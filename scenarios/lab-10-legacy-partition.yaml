@@ -1,0 +1,14 @@
+name: lab-10-legacy-partition
+lab: "10 part 2"
+description: >
+  Game day. The legacy dependency is partitioned by collapsing its connection
+  pool, so requests fail fast rather than hanging. Responders are not told what
+  or when -- that is the point of a game day. Produces a measurable detection
+  timestamp for the MTTD/MTTR calculation.
+steps:
+  - inject: { target: caption-renderer, kind: capacity, pool_size: 1 }
+  - wait: 25m
+  - reset: {}
+stop_conditions:
+  - burn_rate_above: 60
+  - slow_rate_above: 0.60

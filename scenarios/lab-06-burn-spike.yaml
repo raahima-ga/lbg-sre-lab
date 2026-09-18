@@ -1,0 +1,11 @@
+name: lab-06-burn-spike
+lab: "06 part 3 step 4"
+description: >
+  Drives burn rate past the 14.4x fast-burn threshold so the alert the learner
+  just configured actually fires, then clears. Short by design: the point is to
+  see the alert open and resolve, not to spend the budget.
+steps:
+  - inject: { target: meme-generator, kind: error, rate: 0.12 }
+  - wait: 8m
+  - assert: { burn_rate_above: 14.4, window_seconds: 300 }
+  - reset: {}

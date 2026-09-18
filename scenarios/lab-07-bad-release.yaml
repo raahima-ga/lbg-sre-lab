@@ -1,0 +1,14 @@
+name: lab-07-bad-release
+lab: "07 part 4"
+description: >
+  A bad canary. v2.4.2 carries BOTH elevated errors and the slow tail while
+  v2.4.1 stays clean -- the distinction lab 07's verdict turns on. Faults are
+  pinned to service.version, so a learner who checks only the aggregate sees a
+  degraded service and cannot tell which release caused it.
+seed_history: 24h
+steps:
+  - deploy: { service: meme-generator, version: v2.4.2, strategy: canary, weight: 10 }
+  - inject: { target: meme-generator, kind: error,   rate: 0.25,    version: v2.4.2 }
+  - inject: { target: meme-generator, kind: latency, delay: 1800ms, version: v2.4.2 }
+  - wait: 20m
+  - assert: { availability_below: 99.0, window_seconds: 900 }

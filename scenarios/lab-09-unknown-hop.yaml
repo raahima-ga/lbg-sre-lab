@@ -1,0 +1,17 @@
+name: lab-09-unknown-hop
+lab: "09 part 2"
+description: >
+  Randomised target. The theory doc promises "learners do not know in advance
+  which hop is affected", so the controller picks one and withholds it from
+  /status while the run is active. Learners must reach it from trace evidence.
+  Their own stop conditions are registered at runtime via POST /stop-conditions
+  and enforced by the guard -- no human watching required.
+steps:
+  - randomise: { targets: [caption-renderer, template-store, meme-generator] }
+  - inject: { target: $RANDOM, kind: latency, delay: 2500ms }
+  - wait: 20m
+  - reset: {}
+stop_conditions:
+  # A backstop. Learner-authored conditions are added on top at runtime.
+  - burn_rate_above: 40
+  - slow_rate_above: 0.50

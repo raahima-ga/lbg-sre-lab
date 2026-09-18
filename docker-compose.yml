@@ -62,3 +62,43 @@ services:
       - GENERATE_RPS=25
       - TEMPLATES_RPS=5
     depends_on: [meme-generator]
+
+  # Drives every failure the environment produces. See scenarios/ for the
+  # catalogue and README.md for the API.
+  scenario-controller:
+    build: ./apps/scenario-controller
+    environment:
+      - SCENARIO_DIR=/scenarios
+      - MEME_GENERATOR_URL=http://meme-generator:8080
+      - TEMPLATE_STORE_URL=http://template-store:8081
+      - CAPTION_RENDERER_URL=http://caption-renderer:8082
+    volumes:
+      - ./scenarios:/scenarios:ro
+    ports:
+      - "8090:8090"
+    depends_on: [meme-generator, template-store, caption-renderer]
+
+  # --- lab 12 decoys: same image, different service.name ---------------------
+  # These exist so that `service_name like "meme*"` genuinely over-matches.
+  # Both emit GENERATE_FAILED events; neither is the customer-facing path.
+  meme-generator-canary:
+    build: ./apps/decoy
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_SERVICE_NAME=meme-generator-canary
+      - OTEL_RESOURCE_ATTRIBUTES=service.version=v2.4.2,deployment.environment=production,cloud.region=europe-west2,team=meme-sre
+      - DECOY_ROLE=canary
+      - FAIL_EVERY_MS=40000
+      - PORT=8095
+    depends_on: [collector]
+
+  meme-worker:
+    build: ./apps/decoy
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_SERVICE_NAME=meme-worker
+      - OTEL_RESOURCE_ATTRIBUTES=service.version=v1.8.0,deployment.environment=production,cloud.region=europe-west2,team=meme-sre
+      - DECOY_ROLE=batch-worker
+      - FAIL_EVERY_MS=55000
+      - PORT=8096
+    depends_on: [collector]

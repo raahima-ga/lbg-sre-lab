@@ -15,6 +15,7 @@ const express = require('express');
 const { trace, context, SpanStatusCode } = require('@opentelemetry/api');
 const { log } = require('./log');
 const faults = require('./faults');
+const stats = require('./stats');
 
 const app = express();
 app.use(express.json());
@@ -30,17 +31,29 @@ const memeId = () => `MEME-${Math.floor(1000 + Math.random() * 9000)}`;
 // traffic. Lab 06 part 4 has learners prove the exclusion moves the number,
 // which only works if the attribute is really on the span.
 app.use((req, res, next) => {
+  const source = req.get('x-source') || 'user';
   const span = trace.getSpan(context.active());
   if (span) {
-    span.setAttribute('source', req.get('x-source') || 'user');
+    span.setAttribute('source', source);
     span.setAttribute('http.route', req.path);
   }
+  // Feed the rolling SLI window on the way out. Probes and /_fault traffic are
+  // filtered inside stats.record, not here.
+  const started = Date.now();
+  res.on('finish', () => {
+    if (req.path === '/generate') {
+      stats.record({ source, status: res.statusCode, durationMs: Date.now() - started });
+    }
+  });
   next();
 });
 
 // --- probes: traced, but never part of the SLI ---
 app.get('/health', (req, res) => res.sendStatus(200));
 app.get('/readyz', (req, res) => res.sendStatus(200));
+
+// --- SLI surface: what the scenario controller polls to enforce stop conditions ---
+app.get('/_stats', (req, res) => res.json(stats.summary(Number(req.query.window) || 300)));
 
 // --- admin: fault control ---
 app.get('/_fault', (req, res) => res.json(faults.get()));

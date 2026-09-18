@@ -1,0 +1,11 @@
+name: lab-12-query-precision
+lab: "12 parts 1-2"
+description: >
+  Spreads GENERATE_FAILED events across meme-generator and the two decoy
+  services so `service_name like "meme*"` demonstrably over-matches. Also the
+  fault state lab 12's regression test must fail against, then pass once clear.
+steps:
+  - inject: { target: meme-generator, kind: error, rate: 0.08 }
+  - inject: { target: template-store, kind: error, rate: 0.05 }
+  - wait: 20m
+  - reset: {}

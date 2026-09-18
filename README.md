@@ -12,7 +12,7 @@ curriculum repo (`lbg-sre-lab-BUILD.md`).
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 (app layer) | Services, instrumentation, fault injection, local stack | **done — verified running** |
+| 1 (app layer) | Services, instrumentation, fault injection, scenario engine, local stack | **done — verified running** |
 | 0 (spikes) | OneAgent + OTel trace integrity; Davis reproducibility | not started |
 | 1 (infra) | Terraform, GKE, Istio, L7 LB, Artifact Registry, GCE MIG | not started |
 | 2 | Dynatrace as code — SLOs, dashboards, alerts, SRG, Workflows | not started |
@@ -28,6 +28,9 @@ curriculum repo (`lbg-sre-lab-BUILD.md`).
 | `template-store` | 8081 | OTel traces only — **`service.name` alone, no other attributes**, unstructured logs | Lab 05 part 2's target: the badly instrumented service |
 | `caption-renderer` | 8082 | **none at all** | The legacy-style black box. Off-cluster in GCP |
 | `loadgen` | — | — | Four traffic classes: `user`, `synthetic`, `batch`, `probe` |
+| `scenario-controller` | 8090 | — | Runs every lab scenario; **enforces stop conditions** |
+| `meme-generator-canary` | — | traces + logs | Lab 12 decoy — makes `like "meme*"` over-match |
+| `meme-worker` | — | traces + logs | Lab 12 decoy |
 | `collector` | 4318 | — | Tail sampling, host metrics, single egress to Dynatrace |
 
 ## Quick start
@@ -87,6 +90,53 @@ span status `UNSET`, so Dynatrace reads the service failure rate as ~0% — and
 lesson 06's own DQL filters `http.status_code >= 500`. The predecessor app
 returned `402` and had this bug.
 
+## Scenarios
+
+Every failure the environment produces comes from a declarative file in
+`scenarios/`. Nothing equivalent existed in the predecessor app, and eight labs
+need behaviour only this provides.
+
+```bash
+curl -s localhost:8090/scenarios | python3 -m json.tool      # catalogue
+curl -s -X POST localhost:8090/scenarios/lab-07-bad-release/run
+curl -s localhost:8090/status | python3 -m json.tool         # state, log, assertions
+curl -s -X POST localhost:8090/abort                         # stop and clear faults
+curl -s localhost:8090/stats                                 # live SLI window
+```
+
+| Scenario | Lab | What it does |
+|---|---|---|
+| `lab-06-slow-dependency` | 06.1 | Latency on the legacy dependency; breaches the 1500 ms SLO |
+| `lab-06-burn-spike` | 06.3 | Drives burn past 14.4× so the learner's new alert actually fires |
+| `lab-07-bad-release` | 07.4 | `v2.4.2` carries errors **and** the slow tail; `v2.4.1` stays clean |
+| `lab-08-burn-rollback` | 08.3 | Fast-burn breach, revert, 30-minute stability window |
+| `lab-09-unknown-hop` | 09.2 | **Randomised** target, withheld from `/status` while running |
+| `lab-10-legacy-partition` | 10.2 | Collapses the dependency's pool; game-day fault |
+| `lab-12-query-precision` | 12.1–2 | Spreads `GENERATE_FAILED` across the decoys |
+| `reset-squad` | between sessions | Returns to the calibrated baseline |
+
+### Stop conditions are enforced, not advisory
+
+Lab 09 asks learners to write automatic stop conditions. The controller polls
+the live SLI every 5 s and aborts the run itself, then clears every fault. Two
+vocabularies, because a service fails two different ways:
+
+| Condition | Watches | Use |
+|---|---|---|
+| `burn_rate_above` | errors ÷ allowed error rate | availability faults |
+| `slow_rate_above` | share of requests over the latency SLO | latency faults |
+
+Both are needed. A pure latency fault produced **99.8% slow requests at a burn
+rate of 0.43×** in testing — an availability-only guard would never have fired,
+and Lab 09's own example condition is *"p95 latency exceeds 2× SLO target"*.
+
+Learners register their own at runtime:
+
+```bash
+curl -s -X POST localhost:8090/stop-conditions -H 'content-type: application/json' \
+  -d '{"slow_rate_above": 0.25}'
+```
+
 ## Fault injection
 
 ```bash
@@ -137,10 +187,20 @@ Checked against a running stack on 2026-09-18:
 - Version-scoped faults: 10/10 succeed when targeted at `v2.4.2` on a `v2.4.1`
   pod; failures appear immediately when retargeted at `v2.4.1`
 - Collector receives OTLP and applies the tail-sampling pipeline
+- Scenario catalogue lists all 8; `lab-09-unknown-hop` randomised to a
+  different hop on consecutive runs and withheld it from `/status`
+- Stop-condition guard aborted a live run on its own:
+  `slow_rate 99.8% exceeded 50% (524/525 over the 1500ms objective, 60s)`,
+  then cleared every fault back to baseline without intervention
+- Both decoys emit `GENERATE_FAILED` with `service_name`, so
+  `like "meme*"` genuinely over-matches
 
 ## Not built yet
 
-`frontend` (RUM), `scenario-controller` (declarative scenarios + enforced stop
-conditions, needed by lab 09), the `meme-generator-canary` / `meme-worker`
-decoys for lab 12's wildcard query, Kubernetes manifests, Istio config,
-Terraform, and the Dynatrace-as-code layer.
+`frontend` (RUM), history seeding (labs 05 and 07 read "last 24 hours" and a
+pre-rollout baseline), Kubernetes manifests, Istio config, Terraform, the
+Cloud Build/Deploy pipeline, and the Dynatrace-as-code layer.
+
+The `deploy` step verb is recognised but is a no-op locally — it becomes a
+Cloud Deploy call in phase 3, which is also when `lab-08-burn-rollback`'s revert
+stops being a fault reset and becomes a real rollback.

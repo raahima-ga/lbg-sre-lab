@@ -1,0 +1,8 @@
+name: reset-squad
+lab: "between sessions"
+description: >
+  Clears every injected fault and returns the stack to its calibrated baseline:
+  0.4% failure rate, burn rate around 0.8x, inside the 99.5% SLO. Run before
+  every session so lab 05 and lab 07 baselines start from a known state.
+steps:
+  - reset: {}

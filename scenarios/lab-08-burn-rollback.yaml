@@ -1,0 +1,17 @@
+name: lab-08-burn-rollback
+lab: "08 part 3"
+description: >
+  Continues lab 07's incident and pushes burn rate past the fast-burn threshold
+  so the automated rollback fires with no human in the loop. Learners record six
+  timestamps and must not intervene.
+steps:
+  - inject: { target: meme-generator, kind: error,   rate: 0.11,    version: v2.4.2 }
+  - inject: { target: meme-generator, kind: latency, delay: 1800ms, version: v2.4.2 }
+  - wait: 6m
+  - assert: { burn_rate_above: 14.4, window_seconds: 300 }
+  # Phase 3 replaces this with a real Cloud Deploy rollback triggered by the
+  # Dynatrace workflow. Until then the reset stands in for the revert.
+  - deploy: { service: meme-generator, version: v2.4.1, strategy: rollback }
+  - reset: {}
+  - wait: 30m
+  - assert: { window_seconds: 1800 }

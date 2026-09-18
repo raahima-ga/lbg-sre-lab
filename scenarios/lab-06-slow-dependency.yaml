@@ -1,0 +1,10 @@
+name: lab-06-slow-dependency
+lab: "06 part 1"
+description: >
+  A latency fault on the legacy dependency, sized to breach the 1500ms SLO so
+  the slowest trace is findable. Learners must reach the hot hop from trace
+  evidence alone, and discover that caption-renderer emits no server span.
+steps:
+  - inject: { target: caption-renderer, kind: latency, delay: 1400ms }
+  - wait: 25m
+  - reset: {}
